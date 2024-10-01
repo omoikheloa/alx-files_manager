@@ -1,4 +1,5 @@
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
+const { hashPassword, validateId } = require('./auth');
 
 class DBClient {
   constructor() {
@@ -28,6 +29,80 @@ class DBClient {
 
   async nbFiles() {
     return this.client.db().collection('files').countDocuments();
+  }
+
+  async getUserByEmail(email) {
+    return this.client.db().collection('users').findOne({ email });
+  }
+
+  async getUserById(id) {
+    const _id = new ObjectId(id);
+    return this.client.db().collection('users').findOne({ _id });
+  }
+
+  async createUser(email, password) {
+    return this.client
+      .db()
+      .collection('users')
+      .insertOne({ email, password: hashPassword(password) });
+  }
+
+  async getFileById(parentId) {
+    const _id = validateId(parentId) ? new ObjectId(parentId) : null;
+    return this.client.db().collection('files').findOne({ _id });
+  }
+
+  async getFileByUserId(fileId, userId) {
+    const _id = validateId(fileId) ? new ObjectId(fileId) : null;
+
+    return this.client
+      .db()
+      .collection('files')
+      .findOne({
+        _id,
+        userId: new ObjectId(userId),
+      });
+  }
+
+  async getAllFilesPaginated(filter, page) {
+    return this.client
+      .db()
+      .collection('files')
+      .aggregate([
+        { $match: filter },
+        { $sort: { _id: -1 } },
+        { $skip: page * 20 },
+        { $limit: 20 },
+        {
+          $project: {
+            _id: 0,
+            id: '$_id',
+            userId: '$userId',
+            name: '$name',
+            type: '$type',
+            isPublic: '$isPublic',
+            parentId: {
+              $cond: {
+                if: { $eq: ['$parentId', '0'] },
+                then: 0,
+                else: '$parentId',
+              },
+            },
+          },
+        },
+      ])
+      .toArray();
+  }
+
+  async createFile(file) {
+    return this.client.db().collection('files').insertOne(file);
+  }
+
+  async updateFile(fileFilter, status) {
+    return this.client
+      .db()
+      .collection('files')
+      .updateOne(fileFilter, { $set: { isPublic: status } });
   }
 }
 
